@@ -6,7 +6,7 @@ By virtue of this advanced system, communities have been unshackled from traditi
 
 It's a testament to the boundless potential that emerges when decentralization and innovation converge, offering a dynamic platform where ideas flourish, voices resonate, and collective decisions shape the course of tomorrow's decentralized web.
 
-<div align="center"> <img src="https://github.com/3ill/CIRCUIT/blob/main/FRONTEND/assets/logo.png" width="300" height="300"  />
+<div align="center"> <img src="https://github.com/3ill/CIRCUIT/blob/main/FRONTEND/assets/logo.png" width="500" height="500"  />
 </div>
 
 ## Authors
