@@ -30,7 +30,7 @@ It's a testament to the boundless potential that emerges when decentralization a
   git clone https://github.com/3ill/CIRCUIT.git
 ```
 
-#### Smart Contract
+## Smart Contract
 
 **Go to the project directory** ↩
 
@@ -50,7 +50,7 @@ It's a testament to the boundless potential that emerges when decentralization a
   npm run dev
 ```
 
-#### Frontend
+## Frontend
 
 **Go to the project directory ↩**
 
