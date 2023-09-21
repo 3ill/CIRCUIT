@@ -19,6 +19,7 @@ contract circuit {
     //! Project Events
     event tokenMinted(address indexed _to, uint256 _quantity);
     event registration(address indexed _memberAddress, Tier _memberTier);
+    event removal(address indexed _memberAddress, Tier _memberTier);
 
     //!Project Enums
     enum ProposalState {
@@ -71,6 +72,7 @@ contract circuit {
 
     //! Project State
     Rule public daoRule;
+    address private immutable owner;
     address[] private councilMembersAddress;
     Member[] public allMembers;
 
@@ -109,6 +111,7 @@ contract circuit {
             lastModified: block.timestamp
         });
         daoRule = newDaoRule;
+        owner = msg.sender;
 
         surgeMintFee = _surgeTokenPrice;
         surge = IERC20(_tokenAddress);
@@ -128,6 +131,11 @@ contract circuit {
             addressToMember[msg.sender].isAdmin == true,
             "only admins can call this function"
         );
+        _;
+    }
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "only owner can call this function");
         _;
     }
 
@@ -186,41 +194,74 @@ contract circuit {
         string memory _username,
         string memory _profilePicture
     ) external registrationCompliance(_username, _profilePicture) {
-        uint256 id = memberCounter++;
-        address memberAddress = msg.sender;
-        uint256 balance = checkTokenBalance(memberAddress);
-        Tier userTier = assignTier(memberAddress);
-        uint256 proposalCreated = 0;
-        uint256 proposalParticipated = 0;
-        uint256 authority = assignAuthority(memberAddress);
-        bool eligibility = assignEligibility(memberAddress);
+        Member storage member = allMembers.push();
 
-        Member memory newMember = Member({
-            id: id,
-            username: _username,
-            profilePicture: _profilePicture,
-            memberAddress: memberAddress,
-            balance: balance,
-            userTier: userTier,
-            proposalsCreated: proposalCreated,
-            proposalsParticipated: proposalParticipated,
-            authority: authority,
-            eligibility: eligibility,
-            isAdmin: false,
-            isCouncilMember: false
-        });
+        member.id = memberCounter++;
+        member.username = _username;
+        member.profilePicture = _profilePicture;
+        member.memberAddress = msg.sender;
+        member.balance = 0;
+        member.userTier = Tier.silver;
+        member.proposalsCreated = 0;
+        member.proposalsParticipated = 0;
+        member.authority = 0;
+        member.eligibility = assignEligibility(msg.sender);
+        member.isAdmin = false;
+        member.isCouncilMember = false;
 
-        memberIds.push(newMember.id);
-        members[newMember.id] = newMember;
-        memberTier[newMember.memberAddress] = newMember.userTier;
-        allMembers.push(newMember);
-        addressToMember[newMember.memberAddress] = newMember;
-        memberCounter++;
+        memberIds.push(member.id);
+        members[member.id] = member;
+        memberTier[member.memberAddress] = member.userTier;
 
-        emit registration(newMember.memberAddress, newMember.userTier);
+        addressToMember[member.memberAddress] = member;
+        assignAuthority(msg.sender);
+
+        emit registration(member.memberAddress, member.userTier);
     }
 
-    function removeMember() external {}
+    function removeMember(address _memberAddress) external {
+        address memberAddress = _memberAddress;
+        Member storage member = addressToMember[memberAddress];
+
+        require(member.memberAddress == memberAddress, "Member not found");
+
+        require(
+            msg.sender == owner ||
+                msg.sender == memberAddress ||
+                member.isAdmin,
+            "Unauthorized"
+        );
+
+        member.userTier = Tier.bronze;
+        member.authority = 1;
+
+        if (member.isCouncilMember) {
+            member.isCouncilMember = false;
+            councilMemberCounter--;
+        }
+
+        uint256 memberId = member.id;
+        uint256 lastIndex = allMembers.length - 1;
+        if (memberId != lastIndex) {
+            Member storage lastMember = allMembers[lastIndex];
+            allMembers[memberId] = lastMember;
+            members[lastMember.id] = member;
+        }
+        allMembers.pop();
+
+        uint256[] storage newMemberIds = memberIds;
+        for (uint256 i = 0; i < newMemberIds.length; i++) {
+            if (newMemberIds[i] == memberId) {
+                newMemberIds[i] = newMemberIds[newMemberIds.length - 1];
+                newMemberIds.pop();
+                break;
+            }
+        }
+
+        delete memberTier[memberAddress];
+
+        emit removal(memberAddress, Tier.bronze);
+    }
 
     function updateUserName() external {}
 
@@ -248,8 +289,8 @@ contract circuit {
         return addressToMember[_userAddress].userTier;
     }
 
-    function assignTier(address _userAddress) internal view returns (Tier) {
-        Member memory member = addressToMember[_userAddress];
+    function assignTier(address _userAddress) internal returns (Tier) {
+        Member storage member = addressToMember[_userAddress];
 
         if (member.balance >= goldTokenQuantity) {
             member.userTier = Tier.gold;
@@ -262,20 +303,19 @@ contract circuit {
         return member.userTier;
     }
 
-    function assignAuthority(
-        address _userAddress
-    ) internal view returns (uint256) {
-        Member memory member = addressToMember[_userAddress];
+    function assignAuthority(address _userAddress) internal {
+        Member storage member = addressToMember[_userAddress];
+        Tier newmemberTier = member.userTier;
 
-        if (checkTier(_userAddress) == Tier.gold) {
+        if (newmemberTier == Tier.gold) {
             member.authority = goldAuthority;
-        } else if (checkTier(_userAddress) == Tier.silver) {
+        } else if (newmemberTier == Tier.silver) {
             member.authority = silverAuthority;
-        } else {
+        } else if (newmemberTier == Tier.bronze) {
             member.authority = bronzeAuthority;
+        } else {
+            member.authority = 1;
         }
-
-        return member.authority;
     }
 
     function checkIsAdmin() internal {}
