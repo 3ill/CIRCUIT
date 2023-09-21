@@ -26,9 +26,9 @@ contract token is ERC20Capped, ERC20Burnable {
     }
 
     constructor(
-        string memory surge,
-        string memory SURGE
-    ) ERC20(surge, SURGE) ERC20Capped(maxSupply) {
+        string memory _name,
+        string memory _symbol
+    ) ERC20(_name, _symbol) ERC20Capped(maxSupply) {
         initialSupply = 70000000e18;
         Owner = msg.sender;
         _mint(Owner, initialSupply);
