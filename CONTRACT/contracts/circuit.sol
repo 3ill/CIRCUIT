@@ -4,7 +4,7 @@ pragma solidity ^0.8.18;
 /**
  * @title Circuit
  * @author 3illBaby
- * @notice Still in development
+ * @notice In testing
  */
 
 interface IERC20 {
@@ -16,11 +16,7 @@ interface IERC20 {
 
     function transfer(address to, uint256 amount) external returns (bool);
 
-    function approve(address spender, uint256 amount) external returns (bool);
-
     function balanceOf(address account) external view returns (uint256);
-
-    function mint(address to, uint256 amount) external returns (bool);
 }
 
 contract circuit {
@@ -30,14 +26,18 @@ contract circuit {
     event removal(address indexed _memberAddress, Tier _memberTier);
     event usernameUpdated(address indexed _memberAddress, string username);
     event profilePictureUpdated(address indexed _memberAddress);
+    event PropsalCreated(address indexed _memberAddress, string title);
+    event hasVoted(address indexed _memberAddress, uint256 _authority);
 
     //!Project Enums
     enum ProposalState {
         pending,
+        reviewing,
         reviewed
     }
 
     enum Decision {
+        pending,
         approved,
         rejected
     }
@@ -78,6 +78,7 @@ contract circuit {
         address[] voters;
         ProposalState proposalState;
         Decision decision;
+        uint256 time;
     }
 
     //! Project State
@@ -86,6 +87,7 @@ contract circuit {
     address[] private councilMembersAddress;
 
     Member[] public allMembers;
+    Proposal[] public allProposals;
 
     uint256[] public memberIds;
     uint256[] public proposalIds;
@@ -106,7 +108,7 @@ contract circuit {
     mapping(uint256 => Member) public members;
     mapping(address => Tier) private memberTier;
     mapping(address => Member) public addressToMember;
-    mapping(address => Proposal) private proposals;
+    mapping(uint256 => Proposal) private proposals;
     mapping(address => Proposal[]) private userProposals;
     mapping(address => bool) private addressToHasMember;
 
@@ -160,6 +162,11 @@ contract circuit {
             bytes(_username).length > 0 && bytes(_profilePicture).length > 0,
             "can't leave fields blank"
         );
+        _;
+    }
+
+    modifier memberCompliance(address _memberAddress) {
+        require(addressToHasMember[_memberAddress] == true, "not a member");
         _;
     }
 
@@ -238,7 +245,9 @@ contract circuit {
         emit registration(member.memberAddress, member.userTier);
     }
 
-    function removeMember(address _memberAddress) external {
+    function removeMember(
+        address _memberAddress
+    ) external memberCompliance(_memberAddress) onlyAdmins {
         address memberAddress = _memberAddress;
         Member storage member = addressToMember[memberAddress];
         require(member.memberAddress == memberAddress, "Member not found");
@@ -286,8 +295,7 @@ contract circuit {
         emit usernameUpdated(member.memberAddress, _userName);
     }
 
-    function updateTier() external {
-        require(addressToHasMember[msg.sender] == true, "Not a member");
+    function updateTier() external memberCompliance(msg.sender) {
         Member storage member = addressToMember[msg.sender];
         updateUserBalance(msg.sender);
 
@@ -300,8 +308,11 @@ contract circuit {
         }
     }
 
-    function checkUserBalance() external returns (uint256) {
-        require(addressToHasMember[msg.sender] == true, "Not a member");
+    function checkUserBalance()
+        external
+        memberCompliance(msg.sender)
+        returns (uint256)
+    {
         uint256 userBalance = updateUserBalance(msg.sender);
 
         return userBalance;
@@ -315,7 +326,9 @@ contract circuit {
         return result;
     }
 
-    function updateProfilePicture(string memory _profilePicture) external {
+    function updateProfilePicture(
+        string memory _profilePicture
+    ) external memberCompliance(msg.sender) {
         require(bytes(_profilePicture).length > 0, "cannot leave fields empty");
         require(addressToHasMember[msg.sender] == true, "Not a member");
         Member storage member = addressToMember[msg.sender];
@@ -325,17 +338,220 @@ contract circuit {
     }
 
     //! GOVERNANCE FUNCTIONS
-    function createProposal() external {}
+    function createProposal(
+        string memory _title,
+        string memory _description
+    )
+        external
+        registrationCompliance(_title, _description)
+        memberCompliance(msg.sender)
+    {
+        Member storage member = addressToMember[msg.sender];
+        require(
+            member.userTier == Tier.silver || member.userTier == Tier.gold,
+            "Bronze tier members cannot create proposal"
+        );
+        Proposal memory newProposal = Proposal({
+            id: proposalCounter++,
+            proposer: msg.sender,
+            title: _title,
+            description: _description,
+            voteCount: 0,
+            voters: new address[](0),
+            proposalState: ProposalState.pending,
+            decision: Decision.pending,
+            time: block.timestamp
+        });
 
-    function vote() external {}
+        proposalIds.push(newProposal.id);
+        allProposals.push(newProposal);
+        proposals[newProposal.id] = newProposal;
+        userProposals[msg.sender].push(newProposal);
 
-    function updateMemberEligibility() external {}
+        emit PropsalCreated(msg.sender, newProposal.title);
+    }
 
-    function proposalDecision() external {}
+    function getAllProposals() external view returns (Proposal[] memory) {
+        Proposal[] memory allProposal = new Proposal[](proposalIds.length);
 
-    function updateProposalState() external {}
+        for (uint256 i = 0; i < proposalIds.length; i++) {
+            allProposal[i] = proposals[proposalIds[i]];
+        }
 
-    function fetchAllProposals() external {}
+        return allProposal;
+    }
+
+    function getUserProposals() external view returns (Proposal[] memory) {
+        Member storage member = addressToMember[msg.sender];
+        uint256 userProposalCount = 0;
+
+        for (uint256 i = 0; i < member.proposalsCreated; i++) {
+            if (userProposals[msg.sender][i].proposer == msg.sender) {
+                userProposalCount++;
+            }
+        }
+
+        Proposal[] memory userProposal = new Proposal[](userProposalCount);
+
+        uint256 currentIndex = 0;
+        for (uint256 i = 0; i < member.proposalsCreated; i++) {
+            if (userProposals[msg.sender][i].proposer == msg.sender) {
+                userProposal[currentIndex] = userProposals[msg.sender][i];
+                currentIndex++;
+            }
+        }
+
+        return userProposal;
+    }
+
+    function getApprovedProposals() external view returns (Proposal[] memory) {
+        uint256 approvedProposalCount = 0;
+
+        for (uint256 i = 0; i < allProposals.length; i++) {
+            if (allProposals[i].decision == Decision.approved) {
+                approvedProposalCount++;
+            }
+        }
+
+        Proposal[] memory approvedProposals = new Proposal[](
+            approvedProposalCount
+        );
+
+        uint256 currentIndex = 0;
+        for (uint256 i = 0; i < allProposals.length; i++) {
+            if (allProposals[i].decision == Decision.approved) {
+                approvedProposals[currentIndex] = allProposals[i];
+                currentIndex++;
+            }
+        }
+
+        return approvedProposals;
+    }
+
+    function vote(uint256 _proposalID) external memberCompliance(msg.sender) {
+        Member storage member = addressToMember[msg.sender];
+        uint256 voteTimeLimit = 2 days;
+
+        require(_proposalID < allProposals.length, "Invalid proposal ID");
+        Proposal storage proposal = allProposals[_proposalID];
+
+        for (uint256 i = 0; i < proposal.voters.length; i++) {
+            require(
+                proposal.voters[i] != msg.sender,
+                "You have already voted on this proposal"
+            );
+        }
+
+        require(
+            proposal.proposalState == ProposalState.pending ||
+                proposal.proposalState == ProposalState.reviewing,
+            "This proposal has already been reviewed"
+        );
+        require(
+            block.timestamp <= proposal.time + voteTimeLimit,
+            "voting time has elapsed"
+        );
+
+        proposal.voteCount += member.authority;
+
+        if (proposal.proposalState == ProposalState.pending) {
+            proposal.proposalState = ProposalState.reviewing;
+        }
+
+        proposal.voters.push(msg.sender);
+        emit hasVoted(msg.sender, member.authority);
+    }
+
+    function updateMemberEligibility()
+        external
+        view
+        memberCompliance(msg.sender)
+    {
+        assignEligibility(msg.sender);
+    }
+
+    function approveProposal(uint256 _proposalId) external onlyCouncilMembers {
+        require(_proposalId < allProposals.length, "Invalid proposal ID");
+        Proposal storage proposal = allProposals[_proposalId];
+        proposal.decision = Decision.approved;
+    }
+
+    function rejectProposal(uint256 _proposalId) external onlyCouncilMembers {
+        require(_proposalId < allProposals.length, "Invalid proposal ID");
+        Proposal storage proposal = allProposals[_proposalId];
+        proposal.decision = Decision.rejected;
+    }
+
+    function assignCouncilRole(
+        address _memberAddress
+    ) external onlyAdmins memberCompliance(msg.sender) {
+        Member storage member = addressToMember[_memberAddress];
+        require(!member.isCouncilMember, "already a council member");
+
+        require(
+            member.userTier == Tier.gold,
+            "Only gold tier users can be council members"
+        );
+        member.isCouncilMember = true;
+        councilMemberCounter++;
+    }
+
+    function revokeCouncilRole(
+        address _memberAddress
+    ) external onlyAdmins memberCompliance(msg.sender) {
+        Member storage member = addressToMember[_memberAddress];
+        require(member.isCouncilMember, "not a council member");
+
+        member.isCouncilMember = false;
+        councilMemberCounter--;
+    }
+
+    function assignAdminRole(
+        address _memberAddress
+    ) external onlyOwner memberCompliance(_memberAddress) {
+        Member storage member = addressToMember[_memberAddress];
+
+        require(!member.isAdmin, "already an admin");
+
+        require(
+            member.userTier == Tier.gold || member.userTier == Tier.silver,
+            "Only gold or silver tier members can be assigned as administrators"
+        );
+
+        member.isAdmin = true;
+    }
+
+    function revokeAdminRole(
+        address _memberAddress
+    ) external onlyOwner memberCompliance(_memberAddress) {
+        Member storage member = addressToMember[_memberAddress];
+
+        require(member.isAdmin, "not an admin");
+
+        member.isAdmin = false;
+    }
+
+    function checkIsAdmin(
+        address _memberAddress
+    ) external view memberCompliance(_memberAddress) returns (bool) {
+        Member memory member = addressToMember[_memberAddress];
+
+        return member.isAdmin;
+    }
+
+    function checkIsCouncilMember(
+        address _memberAddress
+    ) external view memberCompliance(_memberAddress) returns (bool) {
+        Member memory member = addressToMember[_memberAddress];
+        return member.isCouncilMember;
+    }
+
+    function checkIsEligible(
+        address _memberAddress
+    ) external view memberCompliance(_memberAddress) returns (bool) {
+        Member memory member = addressToMember[_memberAddress];
+        return member.eligibility;
+    }
 
     //! INTERNAL FUNCTIONS
     function checkTier(address _userAddress) internal view returns (Tier) {
@@ -371,11 +587,10 @@ contract circuit {
         }
     }
 
-    function checkIsAdmin() internal {}
-
-    function checkIsCouncilMember() internal {}
-
-    function checkIsEligible() internal {}
+    function updateProposalState(uint256 _proposalId) internal {
+        Proposal storage proposal = allProposals[_proposalId];
+        proposal.proposalState = ProposalState.reviewed;
+    }
 
     function assignEligibility(
         address _userAddress
