@@ -8,11 +8,19 @@ pragma solidity ^0.8.18;
  */
 
 interface IERC20 {
-    function transfer(address to, uint256 amount) external view returns (bool);
+    function transferFrom(
+        address from,
+        address to,
+        uint256 amount
+    ) external returns (bool);
+
+    function transfer(address to, uint256 amount) external returns (bool);
+
+    function approve(address spender, uint256 amount) external returns (bool);
 
     function balanceOf(address account) external view returns (uint256);
 
-    function mint(address to, uint256 amount) external view returns (bool);
+    function mint(address to, uint256 amount) external returns (bool);
 }
 
 contract circuit {
@@ -20,6 +28,8 @@ contract circuit {
     event tokenMinted(address indexed _to, uint256 _quantity);
     event registration(address indexed _memberAddress, Tier _memberTier);
     event removal(address indexed _memberAddress, Tier _memberTier);
+    event usernameUpdated(address indexed _memberAddress, string username);
+    event profilePictureUpdated(address indexed _memberAddress);
 
     //!Project Enums
     enum ProposalState {
@@ -74,6 +84,7 @@ contract circuit {
     Rule public daoRule;
     address private immutable owner;
     address[] private councilMembersAddress;
+
     Member[] public allMembers;
 
     uint256[] public memberIds;
@@ -85,9 +96,9 @@ contract circuit {
 
     uint256 public surgeMintFee;
     uint256 public surgeInCirculation = 0;
-    uint256 public goldTokenQuantity = 100;
-    uint256 public silverTokenQuantity = 50;
-    uint256 public bronzeTokenQuantity = 25;
+    uint256 public goldTokenQuantity = 100e18;
+    uint256 public silverTokenQuantity = 50e18;
+    uint256 public bronzeTokenQuantity = 25e18;
     uint256 public goldAuthority = 3;
     uint256 public silverAuthority = 2;
     uint256 public bronzeAuthority = 1;
@@ -97,6 +108,7 @@ contract circuit {
     mapping(address => Member) public addressToMember;
     mapping(address => Proposal) private proposals;
     mapping(address => Proposal[]) private userProposals;
+    mapping(address => bool) private addressToHasMember;
 
     IERC20 public surge;
 
@@ -114,6 +126,7 @@ contract circuit {
         owner = msg.sender;
 
         surgeMintFee = _surgeTokenPrice;
+
         surge = IERC20(_tokenAddress);
     }
 
@@ -172,21 +185,24 @@ contract circuit {
             "Insufficient funds to complete this transaction"
         );
 
-        surge.mint(msg.sender, _quantity);
+        surge.transfer(msg.sender, _quantity);
+
         surgeInCirculation += _quantity;
+        address payable contractAddress = payable(address(this));
+        contractAddress.transfer(msg.value);
+
+        if (msg.value > surgeMintFee) {
+            uint256 refundAmount = msg.value - surgeMintFee;
+            address payable senderAddress = payable(msg.sender);
+            senderAddress.transfer(refundAmount);
+        }
+
+        updateUserBalance(msg.sender);
+        assignTier(msg.sender);
+        assignAuthority(msg.sender);
+        assignEligibility(msg.sender);
 
         emit tokenMinted(msg.sender, _quantity);
-    }
-
-    function transferSurge(address _to, uint256 _quantity) external view {
-        require(_to != address(0), "address field is empty");
-        require(_quantity > 0, "Invalid Quantity");
-        require(
-            checkTokenBalance(msg.sender) >= _quantity,
-            "Insufficient amount of tokens to complete transfer"
-        );
-
-        surge.transfer(_to, _quantity);
     }
 
     //! MEMBER FUNCTIONS
@@ -194,14 +210,15 @@ contract circuit {
         string memory _username,
         string memory _profilePicture
     ) external registrationCompliance(_username, _profilePicture) {
+        require(!addressToHasMember[msg.sender], "Already a member");
         Member storage member = allMembers.push();
 
         member.id = memberCounter++;
         member.username = _username;
         member.profilePicture = _profilePicture;
         member.memberAddress = msg.sender;
-        member.balance = 0;
-        member.userTier = Tier.silver;
+        member.balance = checkTokenBalance(msg.sender);
+
         member.proposalsCreated = 0;
         member.proposalsParticipated = 0;
         member.authority = 0;
@@ -214,6 +231,8 @@ contract circuit {
         memberTier[member.memberAddress] = member.userTier;
 
         addressToMember[member.memberAddress] = member;
+        addressToHasMember[member.memberAddress] = true;
+        assignTier(member.memberAddress);
         assignAuthority(msg.sender);
 
         emit registration(member.memberAddress, member.userTier);
@@ -222,24 +241,21 @@ contract circuit {
     function removeMember(address _memberAddress) external {
         address memberAddress = _memberAddress;
         Member storage member = addressToMember[memberAddress];
-
         require(member.memberAddress == memberAddress, "Member not found");
-
         require(
             msg.sender == owner ||
                 msg.sender == memberAddress ||
                 member.isAdmin,
-            "Unauthorized"
+            "Unauthorized to remove member"
         );
 
         member.userTier = Tier.bronze;
         member.authority = 1;
-
+        member.eligibility = false;
         if (member.isCouncilMember) {
             member.isCouncilMember = false;
             councilMemberCounter--;
         }
-
         uint256 memberId = member.id;
         uint256 lastIndex = allMembers.length - 1;
         if (memberId != lastIndex) {
@@ -248,7 +264,6 @@ contract circuit {
             members[lastMember.id] = member;
         }
         allMembers.pop();
-
         uint256[] storage newMemberIds = memberIds;
         for (uint256 i = 0; i < newMemberIds.length; i++) {
             if (newMemberIds[i] == memberId) {
@@ -257,19 +272,57 @@ contract circuit {
                 break;
             }
         }
-
         delete memberTier[memberAddress];
-
+        memberCounter--;
         emit removal(memberAddress, Tier.bronze);
     }
 
-    function updateUserName() external {}
+    function updateUserName(string memory _userName) external {
+        require(bytes(_userName).length > 0, "cannot leave username empty");
+        require(addressToHasMember[msg.sender] == true, "Not a member");
+        Member storage member = addressToMember[msg.sender];
+        member.username = _userName;
 
-    function getAllMembers() external {}
+        emit usernameUpdated(member.memberAddress, _userName);
+    }
 
-    function updateProfilePicture() external {}
+    function updateTier() external {
+        require(addressToHasMember[msg.sender] == true, "Not a member");
+        Member storage member = addressToMember[msg.sender];
+        updateUserBalance(msg.sender);
 
-    function upgradeTier() external {}
+        if (member.balance >= goldTokenQuantity) {
+            member.userTier = Tier.gold;
+        } else if (member.balance >= silverTokenQuantity) {
+            member.userTier = Tier.silver;
+        } else {
+            member.userTier = Tier.bronze;
+        }
+    }
+
+    function checkUserBalance() external returns (uint256) {
+        require(addressToHasMember[msg.sender] == true, "Not a member");
+        uint256 userBalance = updateUserBalance(msg.sender);
+
+        return userBalance;
+    }
+
+    function getAllMembers() external view returns (Member[] memory) {
+        Member[] memory result = new Member[](memberIds.length);
+        for (uint256 i = 0; i < memberIds.length; i++) {
+            result[i] = members[memberIds[i]];
+        }
+        return result;
+    }
+
+    function updateProfilePicture(string memory _profilePicture) external {
+        require(bytes(_profilePicture).length > 0, "cannot leave fields empty");
+        require(addressToHasMember[msg.sender] == true, "Not a member");
+        Member storage member = addressToMember[msg.sender];
+
+        member.profilePicture = _profilePicture;
+        emit profilePictureUpdated(member.memberAddress);
+    }
 
     //! GOVERNANCE FUNCTIONS
     function createProposal() external {}
@@ -342,4 +395,13 @@ contract circuit {
     ) internal view returns (uint256 _balance) {
         return surge.balanceOf(_address);
     }
+
+    function updateUserBalance(
+        address _memberAddress
+    ) internal returns (uint256) {
+        Member storage member = addressToMember[_memberAddress];
+        return member.balance = checkTokenBalance(_memberAddress);
+    }
+
+    receive() external payable {}
 }
