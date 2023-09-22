@@ -6,6 +6,10 @@ const { GOERLI_URL, PRIVATE_KEY } = process.env;
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
   solidity: '0.8.19',
+  optimizer: {
+    enabled: true,
+    runs: 200,
+  },
   networks: {
     goerli: {
       url: GOERLI_URL,
