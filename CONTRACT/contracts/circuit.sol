@@ -1,12 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.18;
 
-/**
- * @title Circuit
- * @author 3illBaby
- * @notice Testing Phase 2
- */
-
 interface IERC20 {
     function transfer(address to, uint256 amount) external returns (bool);
 
@@ -22,10 +16,6 @@ contract circuit {
     event profilePictureUpdated(address indexed _memberAddress);
     event PropsalCreated(address indexed _memberAddress, string title);
     event hasVoted(address indexed _memberAddress, uint256 _authority);
-    event proposalApproved(address indexed _memberAddress, string title);
-    event proposalRejected(address indexed _memberAddress, string title);
-    event newCouncilMember(address indexed _memberAddress);
-    event newAdminMember(address indexed _memberAddress);
 
     //!Project Enums
     enum ProposalState {
@@ -308,10 +298,11 @@ contract circuit {
 
     function checkUserBalance()
         external
+        view
         memberCompliance(msg.sender)
         returns (uint256)
     {
-        uint256 userBalance = updateUserBalance(msg.sender);
+        uint256 userBalance = checkTokenBalance(msg.sender);
 
         return userBalance;
     }
@@ -360,6 +351,8 @@ contract circuit {
             decision: Decision.pending,
             time: block.timestamp
         });
+
+        member.proposalsCreated++;
 
         proposalIds.push(newProposal.id);
         allProposals.push(newProposal);
@@ -456,6 +449,7 @@ contract circuit {
             proposal.proposalState = ProposalState.reviewing;
         }
 
+        member.proposalsParticipated++;
         proposal.voters.push(msg.sender);
         emit hasVoted(msg.sender, member.authority);
     }
@@ -472,16 +466,12 @@ contract circuit {
         require(_proposalId < allProposals.length, "Invalid proposal ID");
         Proposal storage proposal = allProposals[_proposalId];
         proposal.decision = Decision.approved;
-
-        emit proposalApproved(proposal.proposer, proposal.title);
     }
 
     function rejectProposal(uint256 _proposalId) external onlyCouncilMembers {
         require(_proposalId < allProposals.length, "Invalid proposal ID");
         Proposal storage proposal = allProposals[_proposalId];
         proposal.decision = Decision.rejected;
-
-        emit proposalRejected(proposal.proposer, proposal.title);
     }
 
     function assignCouncilRole(
@@ -506,8 +496,6 @@ contract circuit {
 
         member.isCouncilMember = false;
         councilMemberCounter--;
-
-        emit newCouncilMember(_memberAddress);
     }
 
     function assignAdminRole(
@@ -524,8 +512,6 @@ contract circuit {
 
         member.isAdmin = true;
         adminCounter++;
-
-        emit newAdminMember(_memberAddress);
     }
 
     function revokeAdminRole(
@@ -536,6 +522,7 @@ contract circuit {
         require(member.isAdmin, "not an admin");
 
         member.isAdmin = false;
+        adminCounter--;
     }
 
     function checkIsAdmin(
