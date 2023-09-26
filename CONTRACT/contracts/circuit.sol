@@ -82,6 +82,8 @@ contract circuit {
     uint256 public memberCounter = 0;
     uint256 public councilMemberCounter = 0;
     uint256 public proposalCounter = 0;
+    uint256 public approvedProposalCounter = 0;
+    uint256 public rejectedProposalCounter = 0;
     uint256 public adminCounter = 0;
 
     uint256 public surgeMintFee;
@@ -372,7 +374,11 @@ contract circuit {
         return allProposal;
     }
 
-    function getUserProposals() external view returns (Proposal[] memory) {
+    function getUserProposals()
+        external
+        view
+        returns (Proposal[] memory, address[][] memory)
+    {
         Member storage member = addressToMember[msg.sender];
         uint256 userProposalCount = 0;
 
@@ -383,16 +389,18 @@ contract circuit {
         }
 
         Proposal[] memory userProposal = new Proposal[](userProposalCount);
+        address[][] memory userVoters = new address[][](userProposalCount);
 
         uint256 currentIndex = 0;
         for (uint256 i = 0; i < member.proposalsCreated; i++) {
             if (userProposals[msg.sender][i].proposer == msg.sender) {
                 userProposal[currentIndex] = userProposals[msg.sender][i];
+                userVoters[currentIndex] = userProposals[msg.sender][i].voters;
                 currentIndex++;
             }
         }
 
-        return userProposal;
+        return (userProposal, userVoters);
     }
 
     function getApprovedProposals() external view returns (Proposal[] memory) {
@@ -439,6 +447,10 @@ contract circuit {
             "This proposal has already been reviewed"
         );
         require(
+            proposal.decision == Decision.pending,
+            "A decision has been reached"
+        );
+        require(
             block.timestamp <= proposal.time + voteTimeLimit,
             "voting time has elapsed"
         );
@@ -466,12 +478,14 @@ contract circuit {
         require(_proposalId < allProposals.length, "Invalid proposal ID");
         Proposal storage proposal = allProposals[_proposalId];
         proposal.decision = Decision.approved;
+        approvedProposalCounter++;
     }
 
     function rejectProposal(uint256 _proposalId) external onlyCouncilMembers {
         require(_proposalId < allProposals.length, "Invalid proposal ID");
         Proposal storage proposal = allProposals[_proposalId];
         proposal.decision = Decision.rejected;
+        rejectedProposalCounter++;
     }
 
     function assignCouncilRole(
