@@ -296,6 +296,8 @@ contract circuit {
         } else {
             member.userTier = Tier.bronze;
         }
+
+        assignEligibility(msg.sender);
     }
 
     function checkUserBalance()
