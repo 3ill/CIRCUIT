@@ -100,7 +100,7 @@ contract circuit {
     mapping(address => Member) public addressToMember;
     mapping(uint256 => Proposal) private proposals;
     mapping(address => Proposal[]) private userProposals;
-    mapping(address => bool) private addressToHasMember;
+    mapping(address => bool) public addressToHasMember;
 
     IERC20 public surge;
 
@@ -178,7 +178,7 @@ contract circuit {
     function mintSurge(uint256 _quantity) external payable {
         require(_quantity > 0, "Invalid Quantity");
         require(
-            msg.value >= surgeMintFee,
+            msg.value >= surgeMintFee * _quantity,
             "Insufficient funds to complete this transaction"
         );
 
