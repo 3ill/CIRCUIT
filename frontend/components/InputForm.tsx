@@ -1,16 +1,14 @@
 'use client';
 
 import { Input } from './ui/input';
-import { create } from 'ipfs-http-client';
 import Image from 'next/image';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, ChangeEvent, MouseEvent } from 'react';
 import { Button } from './ui/button';
 import { useRouter } from 'next/navigation';
 import { getAccount } from 'wagmi/actions';
-import { isMember } from '../app/utils/isMember';
-import { addMember } from '@/app/utils/addMember';
-
-const ipfs = create({ url: 'https://ipfs.infura.io:5001/api/v0' });
+import { isMember } from '@/utils';
+import { addMember } from '@/utils/addMember';
+import { uploadToIPFS } from '@/utils/uploadToIPFS';
 
 const InputForm = () => {
   const { address } = getAccount();
@@ -22,68 +20,50 @@ const InputForm = () => {
 
   const isButtonDisabled = !name || !image;
 
-  // const handleUpload = async (image: File) => {
-  //   const formData = new FormData();
-  //   formData.append('file', image);
-
-  //   try {
-  //     const response = await fetch('https://ipfs.infura.io:5001/api/v0/add', {
-  //       method: 'POST',
-  //       body: formData,
-  //     });
-
-  //     const data = await response.json();
-  //     setHash(data.Hash);
-  //   } catch (error) {
-  //     console.error(error);
-  //   }
-  // };
-
-  const demoNavigate = () => {
-    router.push('/home');
+  const demoNavigate = (e: MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    if (address) {
+      handleCheckIsMember(address);
+    }
   };
 
-  // const handleJoinDao = async (name: string, image: File) => {
-  //   try {
-  //     await handleUpload(image);
-  //     const userhash = hash ?? '';
-  //     await addMember({ name: name ?? '', profilePicture: userhash });
-  //     setFeedback('Member Added');
-  //   } catch (error) {
-  //     console.error(error);
-  //     setFeedback('Error adding member');
-  //   }
-  // };
+  const handleCheckIsMember = async (memberAddress: string) => {
+    const isMemberResult = await isMember({ memberAddress });
+    console.log(isMemberResult);
+    if (isMemberResult === 'Already a member') {
+      router.push('/home');
+    }
+  };
 
-  // const handleButtonClick = async (e: React.MouseEvent<HTMLButtonElement>) => {
-  //   e.preventDefault();
+  const handleAddMemberClick = async (e: MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    try {
+      if (name && image && hash) {
+        const cid = await uploadToIPFS({ image });
+        setHash(cid as string);
+        await addMember({ name, hash });
+        setFeedback('Welcome to the Circuit DAO');
+        console.log(feedback);
+      } else {
+        setFeedback('Please provide a name and a hash.');
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
 
-  //   if (!name || !image) {
-  //     return;
-  //   }
+  const handleImageChange = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const selectedImage: File | null = e.target.files[0];
+      setImage(selectedImage);
+    }
+  };
 
-  //   try {
-  //     await handleJoinDao(name, image);
-  //     router.push('/home');
-  //   } catch (error) {
-  //     console.error(error);
-  //   }
-  // };
-
-  // const handleCheckIsMember = async (memberAddress: string) => {
-  //   const isMemberResult = await isMember({ memberAddress });
-  //   if (isMemberResult === true) {
-  //     router.push('/home');
-  //   } else {
-  //     console.log('User is Not a Member');
-  //   }
-  // };
-
-  // useEffect(() => {
-  //   if (address) {
-  //     handleCheckIsMember(address);
-  //   }
-  // }, []);
+  useEffect(() => {
+    if (address) {
+      handleCheckIsMember(address);
+    }
+  }, [address]);
 
   console.log(address);
 
@@ -123,16 +103,15 @@ const InputForm = () => {
               /> */}
               <Input
                 type="file"
-                // required
-                // onChange={(e) => setImage(e.target.files[0])}
+                required
+                onChange={handleImageChange}
                 className="bg-grey-200 !ring-0 !ring-offset-0  h-fit border-0 p-2 lg:w-[450px] md:w-[350px] max-xs:w-[250px] lg:h-[50px] placeholder:text-white-800 "
               />
             </div>
           </div>
           <Button
             className="bg-grey-200 lg:w-[250px] w-[150px] h-[50px] max-xs:h-[40px] rounded-[15px] self-center lg:mt-[200px] md:mt-[100px] max-xs:mt-[40px] font-Azeret font-bold text-white-800"
-            onClick={demoNavigate}
-            // disabled={isButtonDisabled}
+            onClick={handleAddMemberClick}
           >
             Continue
           </Button>

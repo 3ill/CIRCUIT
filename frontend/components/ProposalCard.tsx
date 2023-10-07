@@ -46,8 +46,8 @@ const ProposalCard = ({
   }, [state]);
 
   return (
-    <section className="flex flex-col bg-black-400 lg:w-[800px] md:w-[450px]  h-fit max-xs:w-[350px]  rounded-[9px] mt-7 shadow-md">
-      <section className="mt-5 flex flex-row justify-between px-2">
+    <section className="flex flex-col bg-black-400 lg:w-[800px] md:w-[450px]  h-fit max-xs:w-[350px]  rounded-[9px] mt-7 shadow-md ">
+      <section className="mt-5 flex flex-row justify-between px-2 backdrop-blur-sm opacity-80 blur-[2%]">
         <div>
           <h1 className="text-gradient_purple-blue font-lexend font-extrabold lg:text-[30px] md:text-[15px] max-xs:text-[13px]">
             {title}
