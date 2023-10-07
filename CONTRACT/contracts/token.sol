@@ -29,7 +29,7 @@ contract token is ERC20Capped, ERC20Burnable {
         string memory _name,
         string memory _symbol
     ) ERC20(_name, _symbol) ERC20Capped(maxSupply) {
-        initialSupply = 70000000e18;
+        initialSupply = 30000000e18;
         Owner = msg.sender;
         _mint(Owner, initialSupply);
     }
