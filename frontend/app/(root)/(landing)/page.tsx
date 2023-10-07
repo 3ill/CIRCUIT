@@ -1,7 +1,7 @@
 import Image from 'next/image';
 import About from '@/components/About';
 import Meet from '@/components/Meet';
-import { technologies } from '../../constants';
+import { technologies } from '../../../constants';
 
 const page = () => {
   return (
